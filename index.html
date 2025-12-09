@@ -512,6 +512,7 @@ let remainingPoints = 0;
 let redeemCooldown = false;
 let currentRedeemData = null;
 let cooldownTimer = null;
+let isRedeeming = false; // 新增：标记是否正在兑换中
 
 // 获取URL参数
 function getQueryParameter(name) {
@@ -574,53 +575,40 @@ async function submitRedeemLog(data) {
         console.error('Error submitting redeem log:', error);
         showMessage('error');
     } finally {
+        // 兑换完成，恢复按钮
+        isRedeeming = false;
+        resumeButtons();
         currentRedeemData = null;
     }
 }
 
-// 开始10秒冷却
-function startCooldown() {
+// 开始封锁按钮（无时间限制，直到兑换完成）
+function lockButtons() {
     redeemCooldown = true;
     
     // 禁用所有兑换按钮
     CONFIG.rewards.forEach((reward, index) => {
         const redeemBtn = document.getElementById(`redeem-${index}`);
         redeemBtn.disabled = true;
-        redeemBtn.textContent = 'Please wait 10s...';
+        redeemBtn.textContent = 'Processing...';
     });
     
-    // 设置10秒倒计时
-    let seconds = 10;
-    cooldownTimer = setInterval(() => {
-        seconds--;
-        
-        if (seconds <= 0) {
-            clearInterval(cooldownTimer);
-            redeemCooldown = false;
-            
-            // 恢复按钮
-            CONFIG.rewards.forEach((reward, index) => {
-                const redeemBtn = document.getElementById(`redeem-${index}`);
-                redeemBtn.textContent = 'Redeem';
-            });
-            
-            updateRewardButtonState();
-        } else {
-            // 更新按钮文字
-            CONFIG.rewards.forEach((reward, index) => {
-                const redeemBtn = document.getElementById(`redeem-${index}`);
-                redeemBtn.textContent = `Wait ${seconds}s...`;
-            });
-        }
-    }, 1000);
-}
-
-// 恢复按钮（当用户点击No时调用）
-function resumeButtons() {
+    // 清除之前的计时器
     if (cooldownTimer) {
         clearInterval(cooldownTimer);
+        cooldownTimer = null;
     }
+}
+
+// 恢复按钮
+function resumeButtons() {
     redeemCooldown = false;
+    
+    // 清除计时器
+    if (cooldownTimer) {
+        clearInterval(cooldownTimer);
+        cooldownTimer = null;
+    }
     
     // 恢复按钮文字和状态
     CONFIG.rewards.forEach((reward, index) => {
@@ -646,7 +634,7 @@ function updateRewardButtonState() {
         plusBtn.disabled = (quantity >= 10); // 上限为10
         
         // 更新兑换按钮状态
-        if (quantity * reward.points <= remainingPoints && quantity > 0 && !redeemCooldown) {
+        if (quantity * reward.points <= remainingPoints && quantity > 0 && !redeemCooldown && !isRedeeming) {
             redeemBtn.disabled = false;
         } else {
             redeemBtn.disabled = true;
@@ -659,9 +647,6 @@ function initiateRedeem(index) {
     const reward = CONFIG.rewards[index];
     const qty = parseInt(document.getElementById(`qty-${index}`).value) || 0;
     if (qty === 0) return;
-    
-    // 开始冷却（弹出确认框时就开始）
-    startCooldown();
     
     currentRedeemData = {
         name: currentUser,
@@ -682,24 +667,34 @@ function confirmRedeem() {
         return;
     }
 
+    // 标记为正在兑换中
+    isRedeeming = true;
+    
+    // 封锁按钮（无时间限制）
+    lockButtons();
+    
     closeModal(); // 关闭modal
     submitRedeemLog(currentRedeemData); // 提交兑换
-    // 注意：不需要调用startCooldown()，因为已经在initiateRedeem中调用了
 }
 
 // 关闭modal并恢复按钮（当用户点击No时）
 function closeModalAndResume() {
     document.getElementById('confirmationModal').style.display = 'none';
-    resumeButtons(); // 恢复按钮功能
+    // 如果点击No，恢复按钮功能
+    if (!isRedeeming) {
+        resumeButtons();
+    }
 }
 
-// 关闭modal（普通关闭，不恢复按钮）
+// 关闭modal（普通关闭）
 function closeModal() {
     document.getElementById('confirmationModal').style.display = 'none';
 }
 
 // 奖励卡数量控制
 function changeQuantity(index, delta) {
+    if (redeemCooldown) return; // 如果正在兑换中，不能修改数量
+    
     const qtyInput = document.getElementById(`qty-${index}`);
     let qty = parseInt(qtyInput.value) || 0;
     qty += delta;
