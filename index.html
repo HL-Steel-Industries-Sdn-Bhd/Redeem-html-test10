@@ -462,7 +462,7 @@ body {
         <p>This will consume <span id="confirmPoints"></span> points.</p>
         <div class="modal-buttons">
             <button class="modal-btn yes" onclick="confirmRedeem()">Yes</button>
-            <button class="modal-btn no" onclick="closeModal()">No</button>
+            <button class="modal-btn no" onclick="closeModalAndResume()">No</button>
         </div>
     </div>
 </div>
@@ -574,12 +574,11 @@ async function submitRedeemLog(data) {
         console.error('Error submitting redeem log:', error);
         showMessage('error');
     } finally {
-        startCooldown();
         currentRedeemData = null;
     }
 }
 
-// 开始15秒冷却
+// 开始10秒冷却
 function startCooldown() {
     redeemCooldown = true;
     
@@ -587,11 +586,11 @@ function startCooldown() {
     CONFIG.rewards.forEach((reward, index) => {
         const redeemBtn = document.getElementById(`redeem-${index}`);
         redeemBtn.disabled = true;
-        redeemBtn.textContent = 'Please wait 15s...';
+        redeemBtn.textContent = 'Please wait 10s...';
     });
     
-    // 设置15秒倒计时
-    let seconds = 15;
+    // 设置10秒倒计时
+    let seconds = 10;
     cooldownTimer = setInterval(() => {
         seconds--;
         
@@ -614,6 +613,22 @@ function startCooldown() {
             });
         }
     }, 1000);
+}
+
+// 恢复按钮（当用户点击No时调用）
+function resumeButtons() {
+    if (cooldownTimer) {
+        clearInterval(cooldownTimer);
+    }
+    redeemCooldown = false;
+    
+    // 恢复按钮文字和状态
+    CONFIG.rewards.forEach((reward, index) => {
+        const redeemBtn = document.getElementById(`redeem-${index}`);
+        redeemBtn.textContent = 'Redeem';
+    });
+    
+    updateRewardButtonState();
 }
 
 // 更新按钮状态
@@ -644,6 +659,10 @@ function initiateRedeem(index) {
     const reward = CONFIG.rewards[index];
     const qty = parseInt(document.getElementById(`qty-${index}`).value) || 0;
     if (qty === 0) return;
+    
+    // 开始冷却（弹出确认框时就开始）
+    startCooldown();
+    
     currentRedeemData = {
         name: currentUser,
         reward: reward.name,
@@ -658,16 +677,23 @@ function initiateRedeem(index) {
 
 // 确认兑换
 function confirmRedeem() {
-    if (redeemCooldown || !currentRedeemData) return;
+    if (!currentRedeemData) {
+        closeModal();
+        return;
+    }
 
-    redeemCooldown = true;
-    const redeemData = { ...currentRedeemData }; // 拷贝数据，防止被closeModal清空
-
-    closeModal(); // 先关闭 modal
-    submitRedeemLog(redeemData); // 提交
+    closeModal(); // 关闭modal
+    submitRedeemLog(currentRedeemData); // 提交兑换
+    // 注意：不需要调用startCooldown()，因为已经在initiateRedeem中调用了
 }
 
-// 关闭 modal
+// 关闭modal并恢复按钮（当用户点击No时）
+function closeModalAndResume() {
+    document.getElementById('confirmationModal').style.display = 'none';
+    resumeButtons(); // 恢复按钮功能
+}
+
+// 关闭modal（普通关闭，不恢复按钮）
 function closeModal() {
     document.getElementById('confirmationModal').style.display = 'none';
 }
